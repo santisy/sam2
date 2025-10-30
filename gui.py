@@ -1,4 +1,5 @@
 import os
+import csv
 import hashlib
 import numpy as np
 import torch
@@ -6,10 +7,16 @@ from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import tkinter as tk
-from tkinter import filedialog, Button
+from tkinter import filedialog, messagebox
+import tkinter.font as tkfont
 from PIL import ImageTk
 import sys
 from pathlib import Path
+
+try:
+    import ttkbootstrap as tb
+except ImportError:
+    tb = None
 
 repo_root = Path(__file__).resolve().parent
 os.environ["SAM2_REPO_ROOT"] = str(repo_root)
@@ -25,6 +32,18 @@ class SAM2GUI:
     def __init__(self, root):
         self.root = root
         self.root.title("SAM2 Interactive Segmentation")
+        self.bg_color = "#f4f6fb"
+        self.canvas_bg = "#1f2937"
+        self.accent_color = "#2563eb"
+        self.accent_hover = "#1d4ed8"
+        self.button_text_color = "#ffffff"
+        self.help_bg = "#2563eb"
+        self.root.configure(bg=self.bg_color)
+        self.font_family = self._choose_font_family()
+        self.base_font = tkfont.Font(family=self.font_family, size=12)
+        self.button_font = tkfont.Font(family=self.font_family, size=12, weight="bold")
+        self.entry_font = tkfont.Font(family=self.font_family, size=12)
+        self.root.option_add("*Font", self.base_font)
         
         # Internal state for mask composition
         self.image = None
@@ -44,18 +63,29 @@ class SAM2GUI:
         self.inference_delay_ms = 80
         self.save_index = 0
         self.saved_mask_paths = []
+        self.prompt_var = tk.StringVar()
+        self.output_dir = Path("output")
+        self.csv_path = self.output_dir / "annotations.csv"
         
-        self.canvas = tk.Canvas(root, width=800, height=600, bg='gray')
+        self.canvas = tk.Canvas(root, width=800, height=600, bg=self.canvas_bg, highlightthickness=0)
         self.canvas.pack()
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
         
-        btn_frame = tk.Frame(root)
-        btn_frame.pack()
-        Button(btn_frame, text="Load Image", command=self.load_image).pack(side=tk.LEFT, padx=5, pady=5)
-        Button(btn_frame, text="Clear Mask", command=self.reset_mask).pack(side=tk.LEFT, padx=5, pady=5)
-        Button(btn_frame, text="Quit", command=root.quit).pack(side=tk.LEFT, padx=5, pady=5)
+        btn_frame = tk.Frame(root, bg=self.bg_color)
+        btn_frame.pack(pady=10)
+        self._create_button(btn_frame, "Load Image", self.load_image).pack(side=tk.LEFT, padx=8)
+        self._create_button(btn_frame, "Clear Mask", self.reset_mask).pack(side=tk.LEFT, padx=8)
+        self._create_button(btn_frame, "Quit", root.quit).pack(side=tk.LEFT, padx=8)
+        
+        prompt_frame = tk.Frame(root, bg=self.bg_color)
+        prompt_frame.pack(fill=tk.X, padx=5, pady=(0, 10))
+        tk.Label(prompt_frame, text="Prompt:", font=self.base_font, bg=self.bg_color).pack(side=tk.LEFT, padx=(2, 4))
+        self.prompt_entry = tk.Entry(prompt_frame, textvariable=self.prompt_var, width=60, font=self.entry_font, relief=tk.FLAT, bg="white")
+        self.prompt_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5, ipady=6, ipadx=6)
+        self._create_help_icon(prompt_frame)
+        self._create_button(prompt_frame, "Save Mask", self.save_current_mask).pack(side=tk.LEFT, padx=8)
         
         if len(sys.argv) > 1:
             self.load_image(sys.argv[1])
@@ -134,7 +164,6 @@ class SAM2GUI:
                 self.combined_mask = self.current_hold_mask.copy()
             else:
                 self.combined_mask = np.logical_or(self.combined_mask, self.current_hold_mask)
-            self._save_mask(self.combined_mask)
 
         self._clear_hold_state(clear_combined=False, show_image=False)
         self._update_overlay()
@@ -196,26 +225,126 @@ class SAM2GUI:
         overlay = Image.blend(self.image, overlay, 0.5)
         self.display_image(overlay)
     
+    def save_current_mask(self):
+        if self.image is None:
+            print("No image loaded. Load an image before saving a mask.")
+            return
+        if self.combined_mask is None:
+            print("No mask to save. Draw on the image first.")
+            return
+        output_path = self._save_mask(self.combined_mask)
+        if output_path is None:
+            print("Unable to save mask.")
+            return
+        prompt_text = self.prompt_var.get().strip()
+        self._record_annotation(output_path, prompt_text)
+        print(f"Saved: {output_path}")
+    
     def _save_mask(self, mask):
         if mask is None:
-            return
-        os.makedirs("output", exist_ok=True)
+            return None
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.save_index += 1
         mask_img = Image.fromarray((mask.astype(np.uint8)) * 255)
-        output_path = f"output/{self.image_name}-{self.image_hash}-mask-{self.save_index:03d}.png"
-        mask_img.save(output_path)
-        print(f"Saved: {output_path}")
-        self.saved_mask_paths.append(output_path)
+        mask_filename = f"{self.image_name}-{self.image_hash}-mask-{self.save_index:03d}.png"
+        output_path = self.output_dir / mask_filename
+        mask_img.save(str(output_path))
+        self.saved_mask_paths.append(str(output_path))
+        return output_path
+    
+    def _record_annotation(self, mask_path, prompt_text):
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        csv_exists = self.csv_path.exists()
+        with self.csv_path.open("a", newline="", encoding="utf-8") as csvfile:
+            writer = csv.writer(csvfile)
+            if not csv_exists:
+                writer.writerow(["image_filename", "mask_filename", "prompt"])
+            image_name = os.path.basename(self.image_path) if self.image_path else ""
+            mask_name = os.path.basename(mask_path)
+            writer.writerow([image_name, mask_name, prompt_text])
+    
+    def _create_button(self, parent, text, command):
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=self.accent_color,
+            fg=self.button_text_color,
+            activebackground=self.accent_hover,
+            activeforeground=self.button_text_color,
+            relief=tk.FLAT,
+            font=self.button_font,
+            padx=16,
+            pady=8,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        button.bind("<Enter>", lambda _event, btn=button: btn.configure(bg=self.accent_hover))
+        button.bind("<Leave>", lambda _event, btn=button: btn.configure(bg=self.accent_color))
+        return button
+    
+    def _create_help_icon(self, parent):
+        canvas = tk.Canvas(parent, width=30, height=30, bg=self.bg_color, highlightthickness=0, bd=0)
+        canvas.pack(side=tk.LEFT, padx=(0, 6))
+        radius = 12
+        center = 15
+        canvas.create_oval(
+            center - radius,
+            center - radius,
+            center + radius,
+            center + radius,
+            fill=self.help_bg,
+            outline=self.help_bg,
+        )
+        canvas.create_text(
+            center,
+            center,
+            text="?",
+            fill=self.button_text_color,
+            font=self.button_font,
+        )
+        canvas.bind("<Button-1>", lambda _event: self._show_prompt_help())
+        canvas.bind("<Enter>", lambda _event: canvas.configure(cursor="hand2"))
+        canvas.bind("<Leave>", lambda _event: canvas.configure(cursor=""))
+        self.prompt_help = canvas
+    
+    def _show_prompt_help(self):
+        message = (
+            "The prompt is a descriptive sentence that identifies the location and intent of the mask. "
+            "Use it to explain what the segmented region represents without relying on the mask itself."
+        )
+        messagebox.showinfo("Prompt guidance", message)
+    
+    def _choose_font_family(self):
+        preferred = [
+            "Inter",
+            "Roboto",
+            "Segoe UI",
+            "SF Pro Display",
+            "Helvetica Neue",
+            "Helvetica",
+            "Arial",
+        ]
+        available = {name.lower(): name for name in tkfont.families()}
+        for candidate in preferred:
+            key = candidate.lower()
+            if key in available:
+                return available[key]
+        try:
+            return tkfont.nametofont("TkDefaultFont").actual("family")
+        except Exception:
+            return "Arial"
     
     def reset_mask(self):
         if self.image is None:
             return
         self._clear_hold_state(
             clear_combined=True,
-            reset_save_index=True,
-            delete_saved="last",
+            reset_save_index=False,
+            delete_saved="none",
             show_image=True,
         )
+        self.prompt_var.set("")
     
     def _clear_inference_state(self):
         self._clear_hold_state(
@@ -226,6 +355,7 @@ class SAM2GUI:
         )
         self.saved_mask_paths = []
         self.save_index = 0
+        self.prompt_var.set("")
 
     def _cancel_inference_job(self):
         if self.inference_job is not None:
@@ -278,6 +408,15 @@ class SAM2GUI:
             except OSError as exc:
                 print(f"Warning: failed to delete {path}: {exc}")
 
-root = tk.Tk()
+def _create_root():
+    if tb is not None:
+        try:
+            return tb.Window(themename="flatly")
+        except Exception:
+            pass
+    return tk.Tk()
+
+
+root = _create_root()
 app = SAM2GUI(root)
 root.mainloop()
