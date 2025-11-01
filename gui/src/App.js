@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:5876';
 const MIN_DIST = 12;
 const INFERENCE_DELAY = 80;
 const MASK_COLORS = [
@@ -350,7 +350,9 @@ function App() {
   const generatePrompt = () => {
     const parts = [];
     parts.push('The');
-    parts.push(pbIndicator);
+    if (pbIndicator) {
+      parts.push(pbIndicator);
+    }
     parts.push(pbPart);
     parts.push('of');
     if (pbDescription) {
@@ -473,7 +475,7 @@ function App() {
             
             <div className="prompt-builder">
               <div className="pb-segment">
-                <div className="pb-label">indicator</div>
+                <div className="pb-label">indicator (optional)</div>
                 <div className="pb-buttons">
                   <button className={lastClicked === 'indicator-top' ? 'active' : ''} onClick={() => { setPbIndicator('top'); setLastClicked('indicator-top'); }}>top</button>
                   <button className={lastClicked === 'indicator-middle' ? 'active' : ''} onClick={() => { setPbIndicator('middle'); setLastClicked('indicator-middle'); }}>middle</button>
@@ -481,6 +483,7 @@ function App() {
                   <button className={lastClicked === 'indicator-left' ? 'active' : ''} onClick={() => { setPbIndicator('left'); setLastClicked('indicator-left'); }}>left</button>
                   <button className={lastClicked === 'indicator-right' ? 'active' : ''} onClick={() => { setPbIndicator('right'); setLastClicked('indicator-right'); }}>right</button>
                 </div>
+                <button className="clear-btn" onClick={() => { setPbIndicator(''); setLastClicked(''); }}>Clear</button>
                 <input type="text" value={pbIndicator} onChange={(e) => setPbIndicator(e.target.value)} />
               </div>
 
@@ -494,8 +497,9 @@ function App() {
               </div>
 
               <div className="pb-segment">
-                <div className="pb-label">description</div>
+                <div className="pb-label">description (optional)</div>
                 <div className="pb-buttons"></div>
+                <button className="clear-btn" onClick={() => setPbDescription('')}>Clear</button>
                 <input type="text" value={pbDescription} onChange={(e) => setPbDescription(e.target.value)} placeholder="(optional)" />
               </div>
 
@@ -531,8 +535,9 @@ function App() {
               </div>
 
               <div className="pb-segment">
-                <div className="pb-label">context</div>
+                <div className="pb-label">context (optional)</div>
                 <div className="pb-buttons"></div>
+                <button className="clear-btn" onClick={() => setPbContext('')}>Clear</button>
                 <input type="text" value={pbContext} onChange={(e) => setPbContext(e.target.value)} placeholder="(optional)" />
               </div>
 

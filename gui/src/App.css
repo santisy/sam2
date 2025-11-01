@@ -172,9 +172,8 @@
 .mask-prompt {
   font-size: 11px;
   color: #aaa;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .mask-actions {
@@ -295,6 +294,21 @@ canvas {
 .pb-buttons button.active {
   background: #2563eb;
   border: 1px solid #60a5fa;
+}
+
+.clear-btn {
+  padding: 4px 8px;
+  font-size: 10px;
+  background: #555;
+  color: #ccc;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.clear-btn:hover {
+  background: #666;
 }
 
 .pb-segment input {
