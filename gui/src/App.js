@@ -1,31 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+import Sidebar from './components/Sidebar';
+import MaskSidebar from './components/MaskSidebar';
+import ImageCanvas from './components/ImageCanvas';
+import AnnotationView from './components/AnnotationView';
+import ToolsSidebar from './components/ToolsSidebar';
 
-const API_BASE = 'http://localhost:5876';
+const PORT = 5876;
+const API_BASE = `http://localhost:${PORT}`;
 const MIN_DIST = 12;
 const INFERENCE_DELAY = 80;
-const MASK_COLORS = [
-  [100, 200, 255],  // Cyan - contrasts with warm interiors
-  [255, 100, 200],  // Magenta - rare in natural scenes
-  [255, 230, 100],  // Yellow - visible but not harsh
-  [200, 150, 255],  // Lavender - distinct from wood tones
-  [100, 255, 200],  // Mint - contrasts with reds/oranges
-];
-const MASK_OPACITY = 0.6;
 
 function App() {
+  // Directory & Images
   const [directory, setDirectory] = useState('test_data_total_1029');
   const [directoryInput, setDirectoryInput] = useState('test_data_total_1029');
   const [images, setImages] = useState([]);
   const [currentImage, setCurrentImage] = useState(null);
+  
+  // Masks & Annotation
   const [masks, setMasks] = useState([]);
   const [activeMask, setActiveMask] = useState(null);
   const [activeMaskIndex, setActiveMaskIndex] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [showOtherMasks, setShowOtherMasks] = useState(true);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   
+  // Drawing state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const inferenceTimer = useRef(null);
+  const lastPoint = useRef(null);
+  const pointsRef = useRef([]);
+  
+  // Prompt builder state
   const [pbIndicator, setPbIndicator] = useState('');
   const [pbPart, setPbPart] = useState('');
   const [pbDescription, setPbDescription] = useState('');
@@ -35,12 +42,15 @@ function App() {
   const [pbContext, setPbContext] = useState('');
   const [lastClicked, setLastClicked] = useState('');
   
-  const canvasRef = useRef(null);
-  const imageRef = useRef(null);
-  const inferenceTimer = useRef(null);
-  const lastPoint = useRef(null);
-  const scale = useRef(1);
-  const pointsRef = useRef([]);
+  // Crop state
+  const [cropMode, setCropMode] = useState(false);
+  const [cropOrientation, setCropOrientation] = useState('landscape');
+  const [cropSize, setCropSize] = useState(100);
+  const [cropData, setCropData] = useState(null);
+  const [currentCrop, setCurrentCrop] = useState(null); // Current unsaved crop
+  
+  // Mask editing mode
+  const [maskMode, setMaskMode] = useState(false);
 
   useEffect(() => {
     setWorkingDirectory();
@@ -48,15 +58,15 @@ function App() {
 
   useEffect(() => {
     if (currentImage) {
-      loadImage();
+      loadAnnotations();
+      // Clear drawing state when switching images
+      setActiveMask(null);
+      setActiveMaskIndex(null);
+      setMaskMode(false);
+      pointsRef.current = [];
+      lastPoint.current = null;
     }
   }, [currentImage]);
-
-  useEffect(() => {
-    if (imageLoaded && imageRef.current) {
-      redrawCanvas();
-    }
-  }, [imageLoaded, activeMask, activeMaskIndex, showOtherMasks, masks]);
 
   const setWorkingDirectory = async () => {
     try {
@@ -108,95 +118,20 @@ function App() {
     }
   };
 
-  const loadImage = async () => {
-    setImageLoaded(false);
+  const loadAnnotations = async () => {
     const res = await fetch(`${API_BASE}/api/annotation/${currentImage.path}`);
     const data = await res.json();
     setMasks(data.masks || []);
-    
     startNewMask();
     
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    
-    img.onload = () => {
-      const maxW = 800;
-      const maxH = 600;
-      const s = Math.min(maxW / img.width, maxH / img.height);
-      scale.current = s;
-      
-      canvas.width = img.width * s;
-      canvas.height = img.height * s;
-      
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      imageRef.current = img;
-      setImageLoaded(true);
-    };
-    
-    img.src = `${API_BASE}/api/image/${currentImage.path}`;
-  };
-
-  const redrawCanvas = () => {
-    if (!imageRef.current || !canvasRef.current) return;
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    // 1. Clear and draw base image
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(imageRef.current, 0, 0, canvas.width, canvas.height);
-    
-    // 2. Draw other masks if toggle is on
-    if (showOtherMasks) {
-      masks.forEach((maskInfo, idx) => {
-        if (idx === activeMaskIndex) return; // Skip active mask
-        if (maskInfo.mask_data) {
-          const color = MASK_COLORS[idx % MASK_COLORS.length];
-          drawMaskOverlay(maskInfo.mask_data, color, MASK_OPACITY);
-        }
-      });
+    // Load crop data from same json
+    if (data.crop) {
+      setCropData(data.crop);
+      setCropOrientation(data.crop.orientation || 'landscape');
+      setCropSize(data.crop.size || 100);
+    } else {
+      setCropData(null);
     }
-    
-    // 3. Always draw active mask on top in green
-    if (activeMask) {
-      drawMaskOverlay(activeMask, [0, 255, 0], MASK_OPACITY);
-    }
-  };
-
-  const drawMaskOverlay = (mask, rgb, opacity) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = canvas.width;
-    maskCanvas.height = canvas.height;
-    const maskCtx = maskCanvas.getContext('2d');
-    
-    const imageData = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
-    const data = imageData.data;
-    
-    for (let y = 0; y < maskCanvas.height; y++) {
-      for (let x = 0; x < maskCanvas.width; x++) {
-        const origY = Math.floor(y / scale.current);
-        const origX = Math.floor(x / scale.current);
-        
-        if (origY < mask.length && origX < mask[0].length && mask[origY][origX]) {
-          const idx = (y * maskCanvas.width + x) * 4;
-          data[idx] = rgb[0];
-          data[idx + 1] = rgb[1];
-          data[idx + 2] = rgb[2];
-          data[idx + 3] = 255;
-        }
-      }
-    }
-    
-    maskCtx.putImageData(imageData, 0, 0);
-    ctx.globalAlpha = opacity;
-    ctx.drawImage(maskCanvas, 0, 0);
-    ctx.globalAlpha = 1.0;
   };
 
   const startNewMask = () => {
@@ -205,6 +140,8 @@ function App() {
     setPrompt('');
     pointsRef.current = [];
     lastPoint.current = null;
+    setMaskMode(true);
+    setCropMode(false);
   };
 
   const editMask = (index) => {
@@ -213,6 +150,8 @@ function App() {
     setPrompt(masks[index].prompt);
     pointsRef.current = [];
     lastPoint.current = null;
+    setMaskMode(true);
+    setCropMode(false);
   };
 
   const deleteMask = async (index) => {
@@ -226,7 +165,7 @@ function App() {
     });
     
     await loadImages();
-    await loadImage();
+    await loadAnnotations();
   };
 
   const saveMask = async () => {
@@ -255,15 +194,60 @@ function App() {
       });
     }
     
+    // Visual feedback
+    const savedIndex = activeMaskIndex;
     await loadImages();
-    await loadImage();
+    await loadAnnotations();
+    
+    // Briefly highlight the saved mask
+    if (savedIndex !== null) {
+      setTimeout(() => {
+        const maskItem = document.querySelectorAll('.mask-item')[savedIndex];
+        if (maskItem) {
+          maskItem.classList.add('saved-flash');
+          setTimeout(() => maskItem.classList.remove('saved-flash'), 1000);
+        }
+      }, 100);
+    }
   };
 
-  const getCanvasCoords = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale.current;
-    const y = (e.clientY - rect.top) / scale.current;
-    return [x, y];
+  const saveCrop = async () => {
+    if (!currentImage || !currentCrop) return;
+    
+    await fetch(`${API_BASE}/api/crop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_path: currentImage.path,
+        crop: currentCrop
+      })
+    });
+    
+    // Reload from backend to ensure consistency
+    const res = await fetch(`${API_BASE}/api/annotation/${currentImage.path}`);
+    const data = await res.json();
+    if (data.crop) {
+      setCropData(data.crop);
+      setCropOrientation(data.crop.orientation || 'landscape');
+      setCropSize(data.crop.size || 100);
+    }
+    
+    setCurrentCrop(null);
+  };
+
+  const deleteCrop = async () => {
+    if (!currentImage) return;
+    
+    await fetch(`${API_BASE}/api/crop`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_path: currentImage.path
+      })
+    });
+    
+    setCropData(null);
+    setCurrentCrop(null);
   };
 
   const shouldSample = (x, y) => {
@@ -298,20 +282,18 @@ function App() {
     setActiveMask(data.mask);
   };
 
-  const handleMouseDown = (e) => {
-    if (!currentImage) return;
+  const handleMouseDown = (x, y) => {
+    if (!currentImage || !maskMode) return;
     
-    const [x, y] = getCanvasCoords(e);
     setIsDrawing(true);
     pointsRef.current = [[x, y]];
     lastPoint.current = [x, y];
     scheduleInference();
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDrawing) return;
+  const handleMouseMove = (x, y) => {
+    if (!isDrawing || !maskMode) return;
     
-    const [x, y] = getCanvasCoords(e);
     if (shouldSample(x, y)) {
       pointsRef.current.push([x, y]);
       lastPoint.current = [x, y];
@@ -320,7 +302,7 @@ function App() {
   };
 
   const handleMouseUp = () => {
-    if (!isDrawing) return;
+    if (!isDrawing || !maskMode) return;
     setIsDrawing(false);
     
     if (inferenceTimer.current) {
@@ -372,196 +354,95 @@ function App() {
 
   return (
     <div className="app">
-      <div className="sidebar">
-        <h2>Images</h2>
-        <div className="directory-changer">
-          <input
-            type="text"
-            value={directoryInput}
-            onChange={(e) => setDirectoryInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && changeDirectory()}
-          />
-          <button onClick={changeDirectory}>Load</button>
-        </div>
-        <div className="directory-info">{directory}</div>
-        {images.length === 0 ? (
-          <div className="no-images">No images found</div>
-        ) : (
-          <div className="image-list">
-            {images.map(img => (
-              <div
-                key={img.path}
-                className={`image-item ${currentImage?.path === img.path ? 'active' : ''}`}
-                onClick={() => setCurrentImage(img)}
-              >
-                {img.filename}
-                {img.mask_count > 0 && <span className="count">({img.mask_count})</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <Sidebar 
+        directory={directory}
+        directoryInput={directoryInput}
+        setDirectoryInput={setDirectoryInput}
+        images={images}
+        currentImage={currentImage}
+        onChangeDirectory={changeDirectory}
+        onSelectImage={setCurrentImage}
+      />
       
-      <div className="mask-sidebar">
-        <h3>Masks</h3>
-        {currentImage && (
-          <>
-            <button onClick={startNewMask} className="new-mask-btn">+ New Mask</button>
-            <div className="mask-list">
-              {activeMaskIndex === null && activeMask && (
-                <div className="mask-item unsaved selected">
-                  <div className="mask-info">
-                    <div className="mask-header">
-                      <div 
-                        className="mask-color-swatch" 
-                        style={{backgroundColor: 'rgb(0, 255, 0)'}}
-                      />
-                      <div className="mask-name">New Mask (unsaved)</div>
-                    </div>
-                    <div className="mask-prompt">{prompt || '(no prompt)'}</div>
-                  </div>
-                </div>
-              )}
-              {masks.map((mask, idx) => {
-                const color = MASK_COLORS[idx % MASK_COLORS.length];
-                return (
-                  <div key={idx} className={`mask-item ${activeMaskIndex === idx ? 'selected' : ''}`}>
-                    <div className="mask-info">
-                      <div className="mask-header">
-                        <div 
-                          className="mask-color-swatch" 
-                          style={{backgroundColor: `rgb(${color[0]}, ${color[1]}, ${color[2]})`}}
-                        />
-                        <div className="mask-name">Mask {idx + 1}</div>
-                      </div>
-                      <div className="mask-prompt">{mask.prompt || '(no prompt)'}</div>
-                    </div>
-                    <div className="mask-actions">
-                      <button onClick={() => editMask(idx)}>Edit</button>
-                      <button onClick={() => deleteMask(idx)} className="delete-btn">Del</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
+      <MaskSidebar 
+        currentImage={currentImage}
+        masks={masks}
+        activeMask={activeMask}
+        activeMaskIndex={activeMaskIndex}
+        prompt={prompt}
+        onStartNewMask={startNewMask}
+        onEditMask={editMask}
+        onDeleteMask={deleteMask}
+      />
       
       <div className="main">
-        {currentImage ? (
-          <>
-            {masks.length > 0 && (
-              <div className="canvas-header">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={showOtherMasks}
-                    onChange={(e) => setShowOtherMasks(e.target.checked)}
-                  />
-                  Show other masks
-                </label>
-              </div>
-            )}
-            <div className="canvas-container">
-              <canvas
-                ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-              />
-            </div>
-            
-            <div className="prompt-builder">
-              <div className="pb-segment">
-                <div className="pb-label">indicator (optional)</div>
-                <div className="pb-buttons">
-                  <button className={lastClicked === 'indicator-top' ? 'active' : ''} onClick={() => { setPbIndicator('top'); setLastClicked('indicator-top'); }}>top</button>
-                  <button className={lastClicked === 'indicator-middle' ? 'active' : ''} onClick={() => { setPbIndicator('middle'); setLastClicked('indicator-middle'); }}>middle</button>
-                  <button className={lastClicked === 'indicator-bottom' ? 'active' : ''} onClick={() => { setPbIndicator('bottom'); setLastClicked('indicator-bottom'); }}>bottom</button>
-                  <button className={lastClicked === 'indicator-left' ? 'active' : ''} onClick={() => { setPbIndicator('left'); setLastClicked('indicator-left'); }}>left</button>
-                  <button className={lastClicked === 'indicator-right' ? 'active' : ''} onClick={() => { setPbIndicator('right'); setLastClicked('indicator-right'); }}>right</button>
-                </div>
-                <button className="clear-btn" onClick={() => { setPbIndicator(''); setLastClicked(''); }}>Clear</button>
-                <input type="text" value={pbIndicator} onChange={(e) => setPbIndicator(e.target.value)} />
-              </div>
-
-              <div className="pb-segment">
-                <div className="pb-label">part</div>
-                <div className="pb-buttons">
-                  <button className={lastClicked === 'part-drawer' ? 'active' : ''} onClick={() => { setPbPart('drawer'); setLastClicked('part-drawer'); }}>drawer</button>
-                  <button className={lastClicked === 'part-door' ? 'active' : ''} onClick={() => { setPbPart('door'); setLastClicked('part-door'); }}>door</button>
-                </div>
-                <input type="text" value={pbPart} onChange={(e) => setPbPart(e.target.value)} />
-              </div>
-
-              <div className="pb-segment">
-                <div className="pb-label">description (optional)</div>
-                <div className="pb-buttons"></div>
-                <button className="clear-btn" onClick={() => setPbDescription('')}>Clear</button>
-                <input type="text" value={pbDescription} onChange={(e) => setPbDescription(e.target.value)} placeholder="(optional)" />
-              </div>
-
-              <div className="pb-segment">
-                <div className="pb-label">object</div>
-                <div className="pb-buttons">
-                  <button className={lastClicked === 'object-cabinet' ? 'active' : ''} onClick={() => { setPbObject('cabinet'); setLastClicked('object-cabinet'); }}>cabinet</button>
-                  <button className={lastClicked === 'object-washer' ? 'active' : ''} onClick={() => { setPbObject('washer'); setLastClicked('object-washer'); }}>washer</button>
-                  <button className={lastClicked === 'object-refrigerator' ? 'active' : ''} onClick={() => { setPbObject('refrigerator'); setLastClicked('object-refrigerator'); }}>fridge</button>
-                  <button className={lastClicked === 'object-oven' ? 'active' : ''} onClick={() => { setPbObject('oven'); setLastClicked('object-oven'); }}>oven</button>
-                </div>
-                <input type="text" value={pbObject} onChange={(e) => setPbObject(e.target.value)} />
-              </div>
-
-              <div className="pb-segment">
-                <div className="pb-label">action</div>
-                <div className="pb-buttons">
-                  <button className={lastClicked === 'action-sliding' ? 'active' : ''} onClick={() => { setPbAction('sliding'); setLastClicked('action-sliding'); }}>sliding</button>
-                  <button className={lastClicked === 'action-swinging' ? 'active' : ''} onClick={() => { setPbAction('swinging'); setLastClicked('action-swinging'); }}>swinging</button>
-                </div>
-                <input type="text" value={pbAction} onChange={(e) => setPbAction(e.target.value)} />
-              </div>
-
-              <div className="pb-segment">
-                <div className="pb-label">direction</div>
-                <div className="pb-buttons">
-                  <button className={lastClicked === 'direction-out' ? 'active' : ''} onClick={() => { setPbDirection('out'); setLastClicked('direction-out'); }}>out</button>
-                  <button className={lastClicked === 'direction-side' ? 'active' : ''} onClick={() => { setPbDirection('to the side'); setLastClicked('direction-side'); }}>side</button>
-                  <button className={lastClicked === 'direction-left' ? 'active' : ''} onClick={() => { setPbDirection('to the left'); setLastClicked('direction-left'); }}>left</button>
-                  <button className={lastClicked === 'direction-right' ? 'active' : ''} onClick={() => { setPbDirection('to the right'); setLastClicked('direction-right'); }}>right</button>
-                </div>
-                <input type="text" value={pbDirection} onChange={(e) => setPbDirection(e.target.value)} />
-              </div>
-
-              <div className="pb-segment">
-                <div className="pb-label">context (optional)</div>
-                <div className="pb-buttons"></div>
-                <button className="clear-btn" onClick={() => setPbContext('')}>Clear</button>
-                <input type="text" value={pbContext} onChange={(e) => setPbContext(e.target.value)} placeholder="(optional)" />
-              </div>
-
-              <button onClick={generatePrompt} className="pb-generate">→ Generate</button>
-            </div>
-            
-            <div className="controls">
-              <button onClick={goToPrev}>← Prev</button>
-              <input
-                type="text"
-                placeholder="Enter prompt..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-              />
-              <button onClick={saveMask} disabled={!activeMask}>Save</button>
-              <button onClick={goToNext}>Next →</button>
-            </div>
-          </>
-        ) : (
-          <div className="no-image-message">
-            {images.length === 0 ? 'No images in directory' : 'Select an image'}
-          </div>
-        )}
+        <ImageCanvas 
+          apiBase={API_BASE}
+          currentImage={currentImage}
+          masks={masks}
+          activeMask={activeMask}
+          activeMaskIndex={activeMaskIndex}
+          showOtherMasks={showOtherMasks}
+          imageLoaded={imageLoaded}
+          setImageLoaded={setImageLoaded}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          maskMode={maskMode}
+          cropMode={cropMode}
+          cropOrientation={cropOrientation}
+          cropSize={cropSize}
+          cropData={cropData}
+          onCropChange={setCurrentCrop}
+        />
+        
+        <AnnotationView 
+          currentImage={currentImage}
+          images={images}
+          masks={masks}
+          showOtherMasks={showOtherMasks}
+          setShowOtherMasks={setShowOtherMasks}
+          prompt={prompt}
+          setPrompt={setPrompt}
+          activeMask={activeMask}
+          pbIndicator={pbIndicator}
+          setPbIndicator={setPbIndicator}
+          pbPart={pbPart}
+          setPbPart={setPbPart}
+          pbDescription={pbDescription}
+          setPbDescription={setPbDescription}
+          pbObject={pbObject}
+          setPbObject={setPbObject}
+          pbAction={pbAction}
+          setPbAction={setPbAction}
+          pbDirection={pbDirection}
+          setPbDirection={setPbDirection}
+          pbContext={pbContext}
+          setPbContext={setPbContext}
+          lastClicked={lastClicked}
+          setLastClicked={setLastClicked}
+          onGeneratePrompt={generatePrompt}
+          onSaveMask={saveMask}
+          onGoToPrev={goToPrev}
+          onGoToNext={goToNext}
+        />
       </div>
+      
+      <ToolsSidebar 
+        cropMode={cropMode}
+        setCropMode={(mode) => {
+          setCropMode(mode);
+          if (mode) setMaskMode(false);
+        }}
+        cropOrientation={cropOrientation}
+        setCropOrientation={setCropOrientation}
+        cropSize={cropSize}
+        setCropSize={setCropSize}
+        cropData={cropData}
+        currentCrop={currentCrop}
+        onSaveCrop={saveCrop}
+        onDeleteCrop={deleteCrop}
+      />
     </div>
   );
 }
