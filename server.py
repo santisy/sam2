@@ -2,6 +2,7 @@ import os
 import json
 import hashlib
 from pathlib import Path
+from datetime import datetime
 import numpy as np
 from PIL import Image
 from fastapi import FastAPI, HTTPException
@@ -30,7 +31,7 @@ app.add_middleware(
 )
 
 # Global state
-IMAGE_DIR = None
+IMAGE_DIR = Path("test_data_total_1029")  # Hardcoded to match frontend default
 
 
 def get_image_hash(path):
@@ -336,12 +337,474 @@ def serve_crop_image(filename):
     return FileResponse(crop_path)
 
 
+@app.post("/api/generate/sora2")
+async def generate_sora2(request: dict):
+    from services import sora2
+    
+    img_path = IMAGE_DIR / request['image_path']
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    annotation_path = get_annotation_path(img_path)
+    if not annotation_path.exists():
+        raise HTTPException(status_code=404, detail="No annotations found")
+    
+    with open(annotation_path) as f:
+        data = json.load(f)
+    
+    if "crop" not in data:
+        raise HTTPException(status_code=400, detail="No crop found for this image")
+    
+    mask_index = request['mask_index']
+    if mask_index >= len(data.get("masks", [])):
+        raise HTTPException(status_code=404, detail="Mask index out of range")
+    
+    # Get crop image path and prompt
+    crops_dir = IMAGE_DIR / "annotations" / "crops"
+    crop_filename = data["crop"]["crop_filename"]
+    crop_path = crops_dir / crop_filename
+    
+    if not crop_path.exists():
+        raise HTTPException(status_code=404, detail="Crop image not found")
+    
+    mask_prompt = data["masks"][mask_index]["prompt"]
+    aspect_ratio = data["crop"]["orientation"]
+    image_hash = data["image_hash"]
+    
+    # Submit to Sora2
+    result = sora2.submit_i2v(
+        image_path=str(crop_path),
+        prompt=mask_prompt,
+        aspect_ratio=aspect_ratio
+    )
+    
+    # Create sora2 directory
+    sora2_dir = IMAGE_DIR / "annotations" / "sora2"
+    sora2_dir.mkdir(exist_ok=True)
+    
+    # Use mask-based JSON naming
+    mask_json_filename = f"{img_path.stem}-{image_hash}-mask-{mask_index + 1:03d}.json"
+    mask_json_path = sora2_dir / mask_json_filename
+    
+    # Load or create mask JSON
+    if mask_json_path.exists():
+        with open(mask_json_path) as f:
+            mask_data = json.load(f)
+    else:
+        mask_data = {
+            "image_path": request['image_path'],
+            "mask_index": mask_index,
+            "jobs": []
+        }
+    
+    # Add new job
+    job = {
+        "job_id": result['job_id'],
+        "model": "sora2",
+        "prompt": mask_prompt,
+        "crop_filename": crop_filename,
+        "aspect_ratio": aspect_ratio,
+        "duration": 4,
+        "status": result['status'],
+        "created_at": datetime.now().isoformat()
+    }
+    
+    mask_data["jobs"].append(job)
+    
+    with open(mask_json_path, "w") as f:
+        json.dump(mask_data, f, indent=2)
+    
+    # Start polling for all incomplete jobs
+    start_polling_all_jobs()
+    
+    return {
+        "success": True,
+        "job_id": result['job_id'],
+        "status": result['status']
+    }
+
+
+@app.post("/api/generate/veo3")
+async def generate_veo3(request: dict):
+    from services import veo3
+    
+    img_path = IMAGE_DIR / request['image_path']
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    annotation_path = get_annotation_path(img_path)
+    if not annotation_path.exists():
+        raise HTTPException(status_code=404, detail="No annotations found")
+    
+    with open(annotation_path) as f:
+        data = json.load(f)
+    
+    if "crop" not in data:
+        raise HTTPException(status_code=400, detail="No crop found for this image")
+    
+    mask_index = request['mask_index']
+    if mask_index >= len(data.get("masks", [])):
+        raise HTTPException(status_code=404, detail="Mask index out of range")
+    
+    # Get crop image path and prompt
+    crops_dir = IMAGE_DIR / "annotations" / "crops"
+    crop_filename = data["crop"]["crop_filename"]
+    crop_path = crops_dir / crop_filename
+    
+    if not crop_path.exists():
+        raise HTTPException(status_code=404, detail="Crop image not found")
+    
+    mask_prompt = data["masks"][mask_index]["prompt"]
+    aspect_ratio = data["crop"]["orientation"]
+    image_hash = data["image_hash"]
+    
+    # Submit to Veo3
+    result = veo3.submit_i2v(
+        image_path=str(crop_path),
+        prompt=mask_prompt,
+        aspect_ratio=aspect_ratio
+    )
+    
+    # Create veo3 directory
+    veo3_dir = IMAGE_DIR / "annotations" / "veo3"
+    veo3_dir.mkdir(exist_ok=True)
+    
+    # Use mask-based JSON naming
+    mask_json_filename = f"{img_path.stem}-{image_hash}-mask-{mask_index + 1:03d}.json"
+    mask_json_path = veo3_dir / mask_json_filename
+    
+    # Load or create mask JSON
+    if mask_json_path.exists():
+        with open(mask_json_path) as f:
+            mask_data = json.load(f)
+    else:
+        mask_data = {
+            "image_path": request['image_path'],
+            "mask_index": mask_index,
+            "jobs": []
+        }
+    
+    # Add new job
+    job = {
+        "job_id": result['job_id'],
+        "model": "veo3",
+        "prompt": mask_prompt,
+        "crop_filename": crop_filename,
+        "aspect_ratio": aspect_ratio,
+        "duration": 4,
+        "status": result['status'],
+        "created_at": datetime.now().isoformat()
+    }
+    
+    mask_data["jobs"].append(job)
+    
+    with open(mask_json_path, "w") as f:
+        json.dump(mask_data, f, indent=2)
+    
+    # Start polling for all incomplete jobs
+    start_polling_all_jobs()
+    
+    return {
+        "success": True,
+        "job_id": result['job_id'],
+        "status": result['status']
+    }
+
+
+def get_video_filename(image_path, image_hash, mask_index, job_index):
+    """Derive video filename from job position"""
+    img_path = Path(image_path)
+    return f"{img_path.stem}-{image_hash}-mask-{mask_index + 1:03d}_video-{job_index + 1:03d}.mp4"
+
+
+def poll_single_job(mask_json_path, job_index):
+    """Poll a single generation job until complete"""
+    import time
+    
+    # Determine model from path
+    if 'sora2' in str(mask_json_path):
+        from services import sora2 as service
+        model_dir_name = 'sora2'
+    elif 'veo3' in str(mask_json_path):
+        from services import veo3 as service
+        model_dir_name = 'veo3'
+    else:
+        print(f"Unknown model directory for {mask_json_path}")
+        return
+    
+    try:
+        with open(mask_json_path) as f:
+            mask_data = json.load(f)
+        
+        if job_index >= len(mask_data['jobs']):
+            return
+        
+        job = mask_data['jobs'][job_index]
+        job_id = job['job_id']
+        
+        # Get annotation data to get image_hash
+        img_path = IMAGE_DIR / mask_data['image_path']
+        annotation_path = get_annotation_path(img_path)
+        with open(annotation_path) as f:
+            anno_data = json.load(f)
+        image_hash = anno_data['image_hash']
+        
+        # Derive video filename
+        video_filename = get_video_filename(
+            mask_data['image_path'], 
+            image_hash, 
+            mask_data['mask_index'], 
+            job_index
+        )
+        
+        model_dir = IMAGE_DIR / "annotations" / model_dir_name
+        video_path = model_dir / video_filename
+        current_status = job.get('status')
+        
+        # Check if video already exists
+        if video_path.exists():
+            if current_status != 'completed':
+                mask_data['jobs'][job_index]['status'] = 'completed'
+                with open(mask_json_path, "w") as f:
+                    json.dump(mask_data, f, indent=2)
+                print(f"Fixed status for {job_id}: video exists but status was {current_status}")
+            return
+        
+        # If status is downloading, try to download immediately
+        if current_status == 'downloading':
+            try:
+                service.download_video(job_id, str(video_path))
+                mask_data['jobs'][job_index]['status'] = 'completed'
+                with open(mask_json_path, "w") as f:
+                    json.dump(mask_data, f, indent=2)
+                print(f"Video re-downloaded: {video_filename}")
+                return
+            except Exception as e:
+                print(f"Failed to re-download {job_id}, will poll for status: {e}")
+        
+        while True:
+            time.sleep(30)
+            
+            try:
+                status_result = service.check_status(job_id)
+                
+                if status_result['status'] == 'completed':
+                    # Set to downloading state
+                    with open(mask_json_path) as f:
+                        mask_data = json.load(f)
+                    mask_data['jobs'][job_index]['status'] = 'downloading'
+                    with open(mask_json_path, "w") as f:
+                        json.dump(mask_data, f, indent=2)
+                    
+                    # Download video
+                    service.download_video(job_id, str(video_path))
+                    
+                    # Mark as completed only after successful download
+                    mask_data['jobs'][job_index]['status'] = 'completed'
+                    with open(mask_json_path, "w") as f:
+                        json.dump(mask_data, f, indent=2)
+                    
+                    print(f"Video downloaded: {video_filename}")
+                    break
+                    
+                elif status_result['status'] == 'failed':
+                    with open(mask_json_path) as f:
+                        mask_data = json.load(f)
+                    mask_data['jobs'][job_index]['status'] = 'failed'
+                    with open(mask_json_path, "w") as f:
+                        json.dump(mask_data, f, indent=2)
+                    
+                    print(f"Generation failed: {job_id}")
+                    break
+                
+                else:
+                    # Update status for in_progress/queued
+                    with open(mask_json_path) as f:
+                        mask_data = json.load(f)
+                    mask_data['jobs'][job_index]['status'] = status_result['status']
+                    with open(mask_json_path, "w") as f:
+                        json.dump(mask_data, f, indent=2)
+                    
+            except Exception as e:
+                print(f"Error polling {job_id}: {e}")
+                break
+                
+    except Exception as e:
+        print(f"Error in poll_single_job: {e}")
+
+
+def start_polling_all_jobs():
+    """Scan all mask JSONs and start polling for incomplete jobs"""
+    import threading
+    
+    if not IMAGE_DIR.exists():
+        return
+    
+    # Poll both sora2 and veo3 directories
+    for model_name in ['sora2', 'veo3']:
+        model_dir = IMAGE_DIR / "annotations" / model_name
+        if not model_dir.exists():
+            continue
+        
+        for json_file in model_dir.glob("*.json"):
+            try:
+                with open(json_file) as f:
+                    mask_data = json.load(f)
+                
+                # Get annotation data to derive video filenames
+                img_path = IMAGE_DIR / mask_data['image_path']
+                annotation_path = get_annotation_path(img_path)
+                with open(annotation_path) as f:
+                    anno_data = json.load(f)
+                image_hash = anno_data['image_hash']
+                
+                # Check each job in this mask
+                for job_index, job in enumerate(mask_data.get('jobs', [])):
+                    status = job.get('status')
+                    job_id = job.get('job_id')
+                    
+                    # Derive video filename
+                    video_filename = get_video_filename(
+                        mask_data['image_path'],
+                        image_hash,
+                        mask_data['mask_index'],
+                        job_index
+                    )
+                    video_path = model_dir / video_filename
+                    video_exists = video_path.exists()
+                    
+                    # Fix inconsistent states
+                    if status == 'completed' and not video_exists:
+                        mask_data['jobs'][job_index]['status'] = 'downloading'
+                        with open(json_file, "w") as f:
+                            json.dump(mask_data, f, indent=2)
+                        print(f"Fixed inconsistent state for {job_id}: marked as completed but video missing")
+                        
+                        thread = threading.Thread(
+                            target=poll_single_job,
+                            args=(json_file, job_index),
+                            daemon=True
+                        )
+                        thread.start()
+                        print(f"Started re-download for {job_id}")
+                        
+                    elif status in ['downloading', 'in_progress', 'queued'] and not video_exists:
+                        thread = threading.Thread(
+                            target=poll_single_job,
+                            args=(json_file, job_index),
+                            daemon=True
+                        )
+                        thread.start()
+                        print(f"Started polling for {job_id}")
+                        
+            except Exception as e:
+                print(f"Error checking job {json_file}: {e}")
+
+
+
+@app.get("/api/generations")
+def list_generations():
+    """List all generation jobs across all images"""
+    if not IMAGE_DIR.exists():
+        return []
+    
+    jobs = []
+    
+    # Scan both sora2 and veo3 directories
+    for model_name in ['sora2', 'veo3']:
+        model_dir = IMAGE_DIR / "annotations" / model_name
+        if not model_dir.exists():
+            continue
+        
+        for json_file in sorted(model_dir.glob("*.json")):
+            try:
+                with open(json_file) as f:
+                    mask_data = json.load(f)
+                
+                # Get annotation data to derive video filenames
+                img_path = IMAGE_DIR / mask_data['image_path']
+                annotation_path = get_annotation_path(img_path)
+                with open(annotation_path) as f:
+                    anno_data = json.load(f)
+                image_hash = anno_data['image_hash']
+                
+                # Process each job in this mask
+                for job_index, job in enumerate(mask_data.get('jobs', [])):
+                    video_filename = get_video_filename(
+                        mask_data['image_path'],
+                        image_hash,
+                        mask_data['mask_index'],
+                        job_index
+                    )
+                    
+                    video_path = model_dir / video_filename
+                    video_exists = video_path.exists()
+                    
+                    jobs.append({
+                        'job_id': job.get('job_id'),
+                        'model': job.get('model'),
+                        'image_path': mask_data.get('image_path'),
+                        'mask_index': mask_data.get('mask_index'),
+                        'prompt': job.get('prompt', ''),
+                        'status': job.get('status'),
+                        'video_filename': video_filename,
+                        'video_exists': video_exists,
+                        'created_at': job.get('created_at')
+                    })
+            except Exception as e:
+                print(f"Error reading job {json_file}: {e}")
+    
+    # Sort by created_at, newest first
+    jobs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    return jobs
+
+
 @app.get("/api/config")
 def get_config():
     return {
         "image_dir": str(IMAGE_DIR.absolute()),
         "total_images": len(list_images())
     }
+
+
+@app.get("/api/video/ours/{filename}")
+def serve_our_video(filename):
+    """Serve video from annotations/ours directory"""
+    ours_dir = IMAGE_DIR / "annotations" / "ours"
+    video_path = ours_dir / filename
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(video_path)
+
+
+@app.get("/api/video/sora2/{filename}")
+def serve_sora2_video(filename):
+    """Serve video from annotations/sora2 directory"""
+    sora2_dir = IMAGE_DIR / "annotations" / "sora2"
+    video_path = sora2_dir / filename
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(video_path)
+
+
+@app.get("/api/video/veo3/{filename}")
+def serve_veo3_video(filename):
+    """Serve video from annotations/veo3 directory"""
+    veo3_dir = IMAGE_DIR / "annotations" / "veo3"
+    video_path = veo3_dir / filename
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(video_path)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start polling all incomplete jobs on server start"""
+    if IMAGE_DIR and IMAGE_DIR.exists():
+        start_polling_all_jobs()
+    else:
+        print(f"Image directory not found: {IMAGE_DIR}")
 
 
 if __name__ == "__main__":

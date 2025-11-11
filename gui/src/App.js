@@ -5,11 +5,14 @@ import MaskSidebar from './components/MaskSidebar';
 import ImageCanvas from './components/ImageCanvas';
 import AnnotationView from './components/AnnotationView';
 import ToolsSidebar from './components/ToolsSidebar';
+import JobsList from './components/JobsList';
+import VideoViewer from './components/VideoViewer';
 
 const PORT = 5876;
 const API_BASE = `http://localhost:${PORT}`;
 const MIN_DIST = 12;
 const INFERENCE_DELAY = 80;
+const JOB_POLL_INTERVAL = 5000; // Poll jobs every 5 seconds
 
 function App() {
   // Directory & Images
@@ -51,10 +54,46 @@ function App() {
   
   // Mask editing mode
   const [maskMode, setMaskMode] = useState(false);
+  
+  // Generation state
+  const [selectedMaskForGen, setSelectedMaskForGen] = useState(null);
+  
+  // Jobs panel state
+  const [jobs, setJobs] = useState([]);
+  const [jobsPanelCollapsed, setJobsPanelCollapsed] = useState(true);
+  const jobPollTimer = useRef(null);
+  
+  // Video viewer state
+  const [showVideoViewer, setShowVideoViewer] = useState(false);
 
   useEffect(() => {
     setWorkingDirectory();
+    loadJobs(); // Initial load
+    startJobPolling(); // Start polling
+    
+    return () => {
+      if (jobPollTimer.current) {
+        clearInterval(jobPollTimer.current);
+      }
+    };
   }, []);
+
+  const loadJobs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/generations`);
+      const data = await res.json();
+      setJobs(data);
+    } catch (err) {
+      console.error('Failed to load jobs:', err);
+    }
+  };
+
+  const startJobPolling = () => {
+    if (jobPollTimer.current) {
+      clearInterval(jobPollTimer.current);
+    }
+    jobPollTimer.current = setInterval(loadJobs, JOB_POLL_INTERVAL);
+  };
 
   useEffect(() => {
     if (currentImage) {
@@ -63,6 +102,7 @@ function App() {
       setActiveMask(null);
       setActiveMaskIndex(null);
       setMaskMode(false);
+      setSelectedMaskForGen(null);
       pointsRef.current = [];
       lastPoint.current = null;
     }
@@ -248,6 +288,76 @@ function App() {
     
     setCropData(null);
     setCurrentCrop(null);
+  };
+
+  const generateSora2 = async () => {
+    if (!currentImage || selectedMaskForGen === null) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/generate/sora2`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_path: currentImage.path,
+          mask_index: selectedMaskForGen
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Generation started:', data.job_id);
+        loadJobs(); // Refresh job list
+        setJobsPanelCollapsed(false); // Show jobs panel
+      }
+    } catch (err) {
+      console.error('Generation failed:', err);
+    }
+  };
+
+  const generateVeo3 = async () => {
+    if (!currentImage || selectedMaskForGen === null) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/generate/veo3`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_path: currentImage.path,
+          mask_index: selectedMaskForGen
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Generation started:', data.job_id);
+        loadJobs(); // Refresh job list
+        setJobsPanelCollapsed(false); // Show jobs panel
+      }
+    } catch (err) {
+      console.error('Generation failed:', err);
+    }
+  };
+  
+  const handleShowVideos = () => {
+    if (selectedMaskForGen === null) return;
+    setShowVideoViewer(true);
+  };
+  
+  const getImagePrefix = () => {
+    // Get image stem for "ours" video filename from mask filename
+    // Mask filename pattern: {imagestem}-{hash}-mask-{num}.png
+    // E.g., "28b854a5-4b6116-mask-002.png" -> we want "28b854a5"
+    // Ours video: {imagestem}_mask_{num}.mp4
+    if (masks.length > 0 && masks[0].mask_filename) {
+      console.log('Extracting from mask_filename:', masks[0].mask_filename);
+      // Extract everything before first hyphen
+      const match = masks[0].mask_filename.match(/^([^-]+)-/);
+      const prefix = match ? match[1] : null;
+      console.log('Extracted prefix:', prefix);
+      return prefix;
+    }
+    console.log('No masks or mask_filename');
+    return null;
   };
 
   const shouldSample = (x, y) => {
@@ -442,6 +552,32 @@ function App() {
         currentCrop={currentCrop}
         onSaveCrop={saveCrop}
         onDeleteCrop={deleteCrop}
+        masks={masks}
+        selectedMaskForGen={selectedMaskForGen}
+        setSelectedMaskForGen={setSelectedMaskForGen}
+        onGenerateSora2={generateSora2}
+        onGenerateVeo3={generateVeo3}
+        jobs={jobs}
+        currentImage={currentImage}
+        onShowVideos={handleShowVideos}
+      />
+      
+      <JobsList 
+        jobs={jobs}
+        isCollapsed={jobsPanelCollapsed}
+        onToggle={() => setJobsPanelCollapsed(!jobsPanelCollapsed)}
+        apiBase={API_BASE}
+      />
+      
+      <VideoViewer 
+        isOpen={showVideoViewer}
+        onClose={() => setShowVideoViewer(false)}
+        maskIndex={selectedMaskForGen}
+        imagePrefix={getImagePrefix()}
+        apiBase={API_BASE}
+        jobs={jobs}
+        currentImage={currentImage}
+        masks={masks}
       />
     </div>
   );
