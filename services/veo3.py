@@ -1,10 +1,10 @@
-import pickle
-import os
 from google import genai
 from google.genai.types import GenerateVideosConfig, Image
 from PIL import Image as PILImage
 from services.api_keys import VERTEX_API_KEY
+import os
 import time
+import pickle
 
 # Setup
 os.environ['GOOGLE_API_KEY'] = VERTEX_API_KEY
@@ -14,12 +14,23 @@ os.environ['GOOGLE_GENAI_USE_VERTEXAI'] = 'True'
 
 client = genai.Client()
 
+
 def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
     """
     Submit image-to-video generation job to Veo 3.1 Fast
     
-    aspect_ratio: 'landscape' or 'portrait'
-    returns: {'job_id': '...', 'status': '...'}
+    Args:
+        image_path: Path to input image
+        prompt: Text prompt to guide video generation
+        aspect_ratio: 'landscape' (16:9) or 'portrait' (9:16)
+        output_gcs_uri: Optional GCS bucket URI (e.g., "gs://bucket/output/")
+    
+    Returns:
+        dict: {
+            'job_id': str (operation name),
+            'operation_data': bytes (pickled operation object),
+            'status': 'submitted'
+        }
     """
     if aspect_ratio == "landscape":
         aspect_ratio_str = "16:9"
@@ -39,6 +50,7 @@ def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
     img_bytes.seek(0)
     
     # Submit operation
+    # Note: Veo 3.1 Fast i2v always generates 8-second videos
     operation = client.models.generate_videos(
         model="veo-3.1-fast-generate-preview",
         prompt=prompt,
@@ -49,7 +61,7 @@ def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
         config=GenerateVideosConfig(
             aspect_ratio=aspect_ratio_str,
             output_gcs_uri=output_gcs_uri,
-            resolution="720p",
+            resolution="720p",  # Can be "720p" or "1080p"
             number_of_videos=1
         )
     )
@@ -60,21 +72,30 @@ def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
     
     return {
         'job_id': job_id,
-        'operation_data': operation_data,  # Store this in your DB/session
+        'operation_data': operation_data,  # Return pickled bytes
         'status': 'submitted'
     }
+
 
 def check_status(operation_data):
     """
     Check status of generation job
     
-    operation_data: pickled operation object from submit_i2v
-    returns: {'status': '...', 'done': bool, 'operation_data': ...}
+    Args:
+        operation_data: pickled operation object (bytes) from submit_i2v
+    
+    Returns:
+        dict: {
+            'status': 'in_progress|completed|failed',
+            'done': bool,
+            'operation_data': bytes (updated pickled operation),
+            'progress': int (always 0 for Veo, no intermediate progress)
+        }
     """
     # Unpickle the operation
     operation = pickle.loads(operation_data)
     
-    # Refresh the operation status
+    # Refresh the operation status from API
     operation = client.operations.get(operation)
     
     # Re-pickle for storage
@@ -101,11 +122,17 @@ def check_status(operation_data):
         'operation_data': updated_operation_data
     }
 
+
 def download_video(operation_data, output_path):
     """
     Download completed video
     
-    operation_data: pickled operation object
+    Args:
+        operation_data: pickled operation object (bytes)
+        output_path: Local path to save the video
+    
+    Raises:
+        Exception: If operation not complete or failed
     """
     operation = pickle.loads(operation_data)
     
@@ -118,13 +145,45 @@ def download_video(operation_data, output_path):
     # Get the result
     result = operation.response
     
-    # Download the video
+    # Write video bytes directly to file
     if hasattr(result, 'generated_videos') and result.generated_videos:
         video = result.generated_videos[0]
-        client.files.download(file=video.video)
-        video.video.save(output_path)
+        
+        # The video bytes are already in the response
+        if hasattr(video.video, 'video_bytes') and video.video.video_bytes:
+            with open(output_path, 'wb') as f:
+                f.write(video.video.video_bytes)
+        else:
+            raise Exception("No video_bytes found in response")
     else:
         raise Exception("No video found in result")
 
-if __name__ == "__main__":
-    check_status("projects/gen-lang-client-0798041980/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-preview/operations/78293bd3-9bbe-44d2-8f9b-74c09e49ea0f")
+
+def wait_for_completion(operation_data, poll_interval=15, timeout=600):
+    """
+    Wait for video generation to complete
+    
+    Args:
+        operation_data: pickled operation object (bytes)
+        poll_interval: Seconds between status checks (default: 15)
+        timeout: Maximum seconds to wait (default: 600 = 10 minutes)
+    
+    Returns:
+        tuple: (success: bool, final_operation_data: bytes)
+    """
+    start_time = time.time()
+    
+    while True:
+        status = check_status(operation_data)
+        operation_data = status['operation_data']  # Update with latest
+        
+        if status['done']:
+            if status['status'] == 'failed':
+                raise Exception(f"Generation failed: {status.get('error')}")
+            return True, operation_data
+        
+        if time.time() - start_time > timeout:
+            return False, operation_data
+        
+        print(f"Waiting... {int(time.time() - start_time)}s elapsed")
+        time.sleep(poll_interval)

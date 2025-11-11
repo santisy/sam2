@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import base64
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -397,7 +398,7 @@ async def generate_sora2(request: dict):
             "jobs": []
         }
     
-    # Add new job
+    # Add new job - Sora2 only needs job_id
     job = {
         "job_id": result['job_id'],
         "model": "sora2",
@@ -484,15 +485,16 @@ async def generate_veo3(request: dict):
             "jobs": []
         }
     
-    # Add new job
+    # Add new job - Veo3 needs operation_data (base64 encoded for JSON)
     job = {
         "job_id": result['job_id'],
         "model": "veo3",
         "prompt": mask_prompt,
         "crop_filename": crop_filename,
         "aspect_ratio": aspect_ratio,
-        "duration": 4,
+        "duration": 8,  # Veo3 always generates 8 seconds for i2v
         "status": result['status'],
+        "operation_data": base64.b64encode(result['operation_data']).decode('utf-8'),  # Store as base64
         "created_at": datetime.now().isoformat()
     }
     
@@ -541,6 +543,7 @@ def poll_single_job(mask_json_path, job_index):
         
         job = mask_data['jobs'][job_index]
         job_id = job['job_id']
+        model = job['model']
         
         # Get annotation data to get image_hash
         img_path = IMAGE_DIR / mask_data['image_path']
@@ -570,10 +573,20 @@ def poll_single_job(mask_json_path, job_index):
                 print(f"Fixed status for {job_id}: video exists but status was {current_status}")
             return
         
+        # Prepare the identifier based on model
+        if model == 'sora2':
+            job_identifier = job_id
+        elif model == 'veo3':
+            # Decode the operation_data from base64
+            job_identifier = base64.b64decode(job['operation_data'])
+        else:
+            print(f"Unknown model: {model}")
+            return
+        
         # If status is downloading, try to download immediately
         if current_status == 'downloading':
             try:
-                service.download_video(job_id, str(video_path))
+                service.download_video(job_identifier, str(video_path))
                 mask_data['jobs'][job_index]['status'] = 'completed'
                 with open(mask_json_path, "w") as f:
                     json.dump(mask_data, f, indent=2)
@@ -586,7 +599,12 @@ def poll_single_job(mask_json_path, job_index):
             time.sleep(30)
             
             try:
-                status_result = service.check_status(job_id)
+                status_result = service.check_status(job_identifier)
+                
+                # For Veo3, update the operation_data after each check
+                if model == 'veo3' and 'operation_data' in status_result:
+                    job_identifier = status_result['operation_data']
+                    mask_data['jobs'][job_index]['operation_data'] = base64.b64encode(job_identifier).decode('utf-8')
                 
                 if status_result['status'] == 'completed':
                     # Set to downloading state
@@ -597,7 +615,7 @@ def poll_single_job(mask_json_path, job_index):
                         json.dump(mask_data, f, indent=2)
                     
                     # Download video
-                    service.download_video(job_id, str(video_path))
+                    service.download_video(job_identifier, str(video_path))
                     
                     # Mark as completed only after successful download
                     mask_data['jobs'][job_index]['status'] = 'completed'
@@ -688,7 +706,7 @@ def start_polling_all_jobs():
                         thread.start()
                         print(f"Started re-download for {job_id}")
                         
-                    elif status in ['downloading', 'in_progress', 'queued'] and not video_exists:
+                    elif status in ['downloading', 'in_progress', 'queued', 'submitted'] and not video_exists:
                         thread = threading.Thread(
                             target=poll_single_job,
                             args=(json_file, job_index),

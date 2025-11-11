@@ -307,7 +307,7 @@ function App() {
         const data = await res.json();
         console.log('Generation started:', data.job_id);
         loadJobs(); // Refresh job list
-        setJobsPanelCollapsed(false); // Show jobs panel
+        //setJobsPanelCollapsed(false); // Show jobs panel
       }
     } catch (err) {
       console.error('Generation failed:', err);
@@ -331,7 +331,7 @@ function App() {
         const data = await res.json();
         console.log('Generation started:', data.job_id);
         loadJobs(); // Refresh job list
-        setJobsPanelCollapsed(false); // Show jobs panel
+        //setJobsPanelCollapsed(false); // Show jobs panel
       }
     } catch (err) {
       console.error('Generation failed:', err);
