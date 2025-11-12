@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import './VideoViewer.css';
 
 function VideoViewer({ 
   isOpen, 

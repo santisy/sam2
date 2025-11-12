@@ -58,7 +58,7 @@ def create_mask(image_dir, image_path, mask_array, prompt):
     
     save_annotation_data(annotation_path, data)
     
-    return mask_index - 1
+    return {"success": True, "mask_index": mask_index - 1}
 
 
 def update_mask(image_dir, image_path, mask_index, mask_array, prompt):
@@ -66,7 +66,7 @@ def update_mask(image_dir, image_path, mask_index, mask_array, prompt):
     data = load_annotation_data(annotation_path)
     
     if data is None or mask_index >= len(data["masks"]):
-        return False
+        raise Exception("Mask not found or invalid index")
     
     annotations_dir = image_dir / "annotations"
     mask_filename = data["masks"][mask_index]["mask_filename"]
@@ -79,7 +79,7 @@ def update_mask(image_dir, image_path, mask_index, mask_array, prompt):
     
     save_annotation_data(annotation_path, data)
     
-    return True
+    return {"success": True}
 
 
 def delete_mask(image_dir, image_path, mask_index):
@@ -87,7 +87,7 @@ def delete_mask(image_dir, image_path, mask_index):
     data = load_annotation_data(annotation_path)
     
     if data is None or mask_index >= len(data["masks"]):
-        return False
+        raise Exception("Mask not found or invalid index")
     
     annotations_dir = image_dir / "annotations"
     mask_filename = data["masks"][mask_index]["mask_filename"]
@@ -100,7 +100,7 @@ def delete_mask(image_dir, image_path, mask_index):
     
     save_annotation_data(annotation_path, data)
     
-    return True
+    return {"success": True}
 
 
 def get_annotation_with_masks(image_dir, image_path):
@@ -161,7 +161,7 @@ def save_crop(image_dir, image_path, crop_info):
     
     save_annotation_data(annotation_path, data)
     
-    return True
+    return {"success": True}
 
 
 def delete_crop(image_dir, image_path):
@@ -178,4 +178,4 @@ def delete_crop(image_dir, image_path):
         del data["crop"]
         save_annotation_data(annotation_path, data)
     
-    return True
+    return {"success": True}

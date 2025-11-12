@@ -1,0 +1,137 @@
+.sidebar {
+  width: var(--sidebar-width);
+  background: #252525;
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid #333;
+}
+
+.sidebar h2 {
+  margin: 0 0 15px 0;
+  font-size: 18px;
+}
+
+.directory-changer {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.directory-changer input {
+  flex: 1;
+  padding: 8px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+}
+
+.directory-changer input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.directory-changer button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.directory-info {
+  font-size: 11px;
+  color: #888;
+  padding: 8px 0;
+  border-bottom: 1px solid #333;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+
+.no-images {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+}
+
+.image-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-item {
+  padding: 10px;
+  background: #333;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-item:hover {
+  background: #3a3a3a;
+}
+
+.image-item.active {
+  background: #2563eb;
+}
+
+.image-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-counts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.image-item .count {
+  min-width: 20px;
+  text-align: center;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.image-item .count.masks {
+  background: #14532d;
+  color: #4ade80;
+}
+
+.video-counts {
+  display: flex;
+  gap: 3px;
+}
+
+.count.video.sora2 {
+  background: #2d1a4a;
+  color: #9333ea;
+}
+
+.count.video.veo3 {
+  background: #164e63;
+  color: #0891b2;
+}
+
+.count.video.kling {
+  background: #4a1f0d;
+  color: #ea580c;
+}
+
+.count.video.incomplete {
+  opacity: 0.3;
+}
+
+.count.video.complete {
+  opacity: 1;
+  font-weight: 700;
+}

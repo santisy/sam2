@@ -1,4 +1,5 @@
 import React from 'react';
+import './JobsList.css';
 
 function JobsList({ jobs, isCollapsed, onToggle, apiBase }) {
   const formatTime = (isoString) => {
@@ -42,7 +43,7 @@ function JobsList({ jobs, isCollapsed, onToggle, apiBase }) {
                 <div key={job.job_id} className="job-item">
                   <div className="job-header-row">
                     <div className="job-status-group">
-                      <span className="job-model">{job.model}</span>
+                      <span className={`job-model ${job.model}`}>{job.model}</span>
                       <span 
                         className="job-status"
                         style={{ color: getStatusColor(job.status) }}

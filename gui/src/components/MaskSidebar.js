@@ -1,4 +1,5 @@
 import React from 'react';
+import './MaskSidebar.css';
 
 const MASK_COLORS = [
   [100, 200, 255],

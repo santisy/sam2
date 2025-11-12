@@ -21,6 +21,8 @@ def poll_job_thread(job_id, model, job_identifier, video_path):
         from services import sora2 as service
     elif model == 'veo3':
         from services import veo3 as service
+    elif model == 'kling':
+        from services import kling as service
     else:
         return
     
@@ -69,7 +71,7 @@ def load_all_jobs(image_dir):
     with JOBS_LOCK:
         ACTIVE_JOBS.clear()
     
-    for model_name in ['sora2', 'veo3']:
+    for model_name in ['sora2', 'veo3', 'kling']:
         model_dir = image_dir / "annotations" / model_name
         if not model_dir.exists():
             continue
@@ -115,6 +117,8 @@ def load_all_jobs(image_dir):
                             job_identifier = job['job_id']
                         elif job['model'] == 'veo3':
                             job_identifier = base64.b64decode(job['operation_data'])
+                        elif job['model'] == 'kling':
+                            job_identifier = job['job_id']
                         else:
                             continue
                         
@@ -130,18 +134,34 @@ def load_all_jobs(image_dir):
                 print(f"Error loading job {json_file}: {e}")
 
 
-def async_submit_job(temp_job_id, image_dir, image_path, mask_index, image_hash, crop_path, mask_prompt, aspect_ratio, model):
+def async_submit_job(temp_job_id, image_dir, request, model):
     if model == 'sora2':
         from services import sora2 as service
         model_dir_name = 'sora2'
     elif model == 'veo3':
         from services import veo3 as service
         model_dir_name = 'veo3'
+    elif model == 'kling':
+        from services import kling as service
+        model_dir_name = 'kling'
     else:
         return
     
     try:
-        img_path = Path(image_path)
+        from services import mask_crop_service as mcs
+        
+        img_path = image_dir / request['image_path']
+        annotation_path = mcs.get_annotation_path(image_dir, img_path)
+        
+        with open(annotation_path) as f:
+            data = json.load(f)
+        
+        mask_index = request['mask_index']
+        image_hash = data["image_hash"]
+        crops_dir = image_dir / "annotations" / "crops"
+        crop_path = crops_dir / data["crop"]["crop_filename"]
+        mask_prompt = data["masks"][mask_index]["prompt"]
+        aspect_ratio = data["crop"]["orientation"]
         
         result = service.submit_i2v(
             image_path=str(crop_path),
@@ -160,7 +180,7 @@ def async_submit_job(temp_job_id, image_dir, image_path, mask_index, image_hash,
                 mask_data = json.load(f)
         else:
             mask_data = {
-                "image_path": image_path,
+                "image_path": request['image_path'],
                 "mask_index": mask_index,
                 "jobs": []
             }
@@ -185,20 +205,19 @@ def async_submit_job(temp_job_id, image_dir, image_path, mask_index, image_hash,
         with open(mask_json_path, "w") as f:
             json.dump(mask_data, f, indent=2)
         
-        video_filename = get_video_filename(image_path, image_hash, mask_index, job_index)
+        video_filename = get_video_filename(request['image_path'], image_hash, mask_index, job_index)
         video_path = model_dir / video_filename
         
         real_job_id = result['job_id']
         
         with JOBS_LOCK:
-            # Remove temp entry, add real one
             if temp_job_id in ACTIVE_JOBS:
                 temp_info = ACTIVE_JOBS.pop(temp_job_id)
             
             ACTIVE_JOBS[real_job_id] = {
                 'job_id': real_job_id,
                 'model': model,
-                'image_path': image_path,
+                'image_path': request['image_path'],
                 'mask_index': mask_index,
                 'prompt': mask_prompt,
                 'video_filename': video_filename,
@@ -211,6 +230,8 @@ def async_submit_job(temp_job_id, image_dir, image_path, mask_index, image_hash,
             job_identifier = result['job_id']
         elif model == 'veo3':
             job_identifier = result['operation_data']
+        elif model == 'kling':
+            job_identifier = result['job_id']
         
         thread = threading.Thread(
             target=poll_job_thread,
@@ -226,24 +247,32 @@ def async_submit_job(temp_job_id, image_dir, image_path, mask_index, image_hash,
                 ACTIVE_JOBS[temp_job_id]['status'] = 'failed'
 
 
-def submit_job(image_dir, image_path, mask_index, image_hash, crop_path, mask_prompt, aspect_ratio, model):
+def submit_job(image_dir, request, model):
     import uuid
     
     temp_job_id = f"pending_{uuid.uuid4().hex[:8]}"
     
-    model_dir_name = 'sora2' if model == 'sora2' else 'veo3'
+    if model == 'sora2':
+        model_dir_name = 'sora2'
+    elif model == 'veo3':
+        model_dir_name = 'veo3'
+    elif model == 'kling':
+        model_dir_name = 'kling'
+    else:
+        model_dir_name = model
+    
     model_dir = image_dir / "annotations" / model_dir_name
     
-    video_filename = get_video_filename(image_path, image_hash, mask_index, 999)  # Temp
+    video_filename = f"pending_{temp_job_id}.mp4"
     video_path = model_dir / video_filename
     
     with JOBS_LOCK:
         ACTIVE_JOBS[temp_job_id] = {
             'job_id': temp_job_id,
             'model': model,
-            'image_path': image_path,
-            'mask_index': mask_index,
-            'prompt': mask_prompt,
+            'image_path': request['image_path'],
+            'mask_index': request['mask_index'],
+            'prompt': 'submitting...',
             'video_filename': video_filename,
             'video_path': video_path,
             'created_at': datetime.now().isoformat(),
@@ -252,12 +281,12 @@ def submit_job(image_dir, image_path, mask_index, image_hash, crop_path, mask_pr
     
     thread = threading.Thread(
         target=async_submit_job,
-        args=(temp_job_id, image_dir, image_path, mask_index, image_hash, crop_path, mask_prompt, aspect_ratio, model),
+        args=(temp_job_id, image_dir, request, model),
         daemon=True
     )
     thread.start()
     
-    return temp_job_id
+    return {"success": True, "job_id": temp_job_id}
 
 
 def list_all_jobs():

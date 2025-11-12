@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import './ImageCanvas.css';
 
 const MASK_COLORS = [
   [100, 200, 255],

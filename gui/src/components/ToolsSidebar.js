@@ -1,4 +1,5 @@
 import React from 'react';
+import './ToolsSidebar.css';
 
 function ToolsSidebar({
   cropMode,
@@ -16,6 +17,7 @@ function ToolsSidebar({
   setSelectedMaskForGen,
   onGenerateSora2,
   onGenerateVeo3,
+  onGenerateKling,
   jobs,
   currentImage,
   onShowVideos
@@ -60,6 +62,19 @@ function ToolsSidebar({
     }
     
     onGenerateVeo3();
+  };
+
+  const handleGenerateKling = () => {
+    if (selectedMaskForGen === null) return;
+    
+    const counts = getJobCountsForMask(selectedMaskForGen);
+    if (counts.kling > 0) {
+      if (!window.confirm(`This mask already has ${counts.kling} Kling job(s). Generate another one?`)) {
+        return;
+      }
+    }
+    
+    onGenerateKling();
   };
   
   return (
@@ -174,7 +189,7 @@ function ToolsSidebar({
             
             <button 
               className="generate-btn kling-btn"
-              onClick={() => alert('Kling coming soon')}
+              onClick={handleGenerateKling}
               disabled={!cropData || selectedMaskForGen === null}
             >
               Generate with Kling

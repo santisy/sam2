@@ -44,6 +44,7 @@ function App() {
   const [pbDirection, setPbDirection] = useState('');
   const [pbContext, setPbContext] = useState('');
   const [lastClicked, setLastClicked] = useState('');
+  const [promptBuilderCollapsed, setPromptBuilderCollapsed] = useState(true);
   
   // Crop state
   const [cropMode, setCropMode] = useState(false);
@@ -335,6 +336,29 @@ function App() {
       console.error('Generation failed:', err);
     }
   };
+
+  const generateKling = async () => {
+    if (!currentImage || selectedMaskForGen === null) return;
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/generate/kling`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_path: currentImage.path,
+          mask_index: selectedMaskForGen
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Generation started:', data.job_id);
+        loadJobs(); // Refresh job list
+      }
+    } catch (err) {
+      console.error('Generation failed:', err);
+    }
+  };
   
   const handleShowVideos = () => {
     if (selectedMaskForGen === null) return;
@@ -470,69 +494,81 @@ function App() {
         currentImage={currentImage}
         onChangeDirectory={changeDirectory}
         onSelectImage={setCurrentImage}
+        jobs={jobs}
       />
       
-      <MaskSidebar 
-        currentImage={currentImage}
-        masks={masks}
-        activeMask={activeMask}
-        activeMaskIndex={activeMaskIndex}
-        prompt={prompt}
-        onStartNewMask={startNewMask}
-        onEditMask={editMask}
-        onDeleteMask={deleteMask}
-      />
-      
-      <div className="main">
-        <ImageCanvas 
-          apiBase={API_BASE}
+      <div className="center-content">
+        <MaskSidebar 
           currentImage={currentImage}
           masks={masks}
           activeMask={activeMask}
           activeMaskIndex={activeMaskIndex}
-          showOtherMasks={showOtherMasks}
-          imageLoaded={imageLoaded}
-          setImageLoaded={setImageLoaded}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          maskMode={maskMode}
-          cropMode={cropMode}
-          cropOrientation={cropOrientation}
-          cropSize={cropSize}
-          cropData={cropData}
-          onCropChange={setCurrentCrop}
+          prompt={prompt}
+          onStartNewMask={startNewMask}
+          onEditMask={editMask}
+          onDeleteMask={deleteMask}
         />
         
-        <AnnotationView 
-          currentImage={currentImage}
-          images={images}
-          masks={masks}
-          showOtherMasks={showOtherMasks}
-          setShowOtherMasks={setShowOtherMasks}
-          prompt={prompt}
-          setPrompt={setPrompt}
-          activeMask={activeMask}
-          pbIndicator={pbIndicator}
-          setPbIndicator={setPbIndicator}
-          pbPart={pbPart}
-          setPbPart={setPbPart}
-          pbDescription={pbDescription}
-          setPbDescription={setPbDescription}
-          pbObject={pbObject}
-          setPbObject={setPbObject}
-          pbAction={pbAction}
-          setPbAction={setPbAction}
-          pbDirection={pbDirection}
-          setPbDirection={setPbDirection}
-          pbContext={pbContext}
-          setPbContext={setPbContext}
-          lastClicked={lastClicked}
-          setLastClicked={setLastClicked}
-          onGeneratePrompt={generatePrompt}
-          onSaveMask={saveMask}
-          onGoToPrev={goToPrev}
-          onGoToNext={goToNext}
+        <div className="main">
+          <ImageCanvas 
+            apiBase={API_BASE}
+            currentImage={currentImage}
+            masks={masks}
+            activeMask={activeMask}
+            activeMaskIndex={activeMaskIndex}
+            showOtherMasks={showOtherMasks}
+            imageLoaded={imageLoaded}
+            setImageLoaded={setImageLoaded}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            maskMode={maskMode}
+            cropMode={cropMode}
+            cropOrientation={cropOrientation}
+            cropSize={cropSize}
+            cropData={cropData}
+            onCropChange={setCurrentCrop}
+          />
+          
+          <AnnotationView 
+            currentImage={currentImage}
+            images={images}
+            masks={masks}
+            showOtherMasks={showOtherMasks}
+            setShowOtherMasks={setShowOtherMasks}
+            prompt={prompt}
+            setPrompt={setPrompt}
+            activeMask={activeMask}
+            pbIndicator={pbIndicator}
+            setPbIndicator={setPbIndicator}
+            pbPart={pbPart}
+            setPbPart={setPbPart}
+            pbDescription={pbDescription}
+            setPbDescription={setPbDescription}
+            pbObject={pbObject}
+            setPbObject={setPbObject}
+            pbAction={pbAction}
+            setPbAction={setPbAction}
+            pbDirection={pbDirection}
+            setPbDirection={setPbDirection}
+            pbContext={pbContext}
+            setPbContext={setPbContext}
+            lastClicked={lastClicked}
+            setLastClicked={setLastClicked}
+            promptBuilderCollapsed={promptBuilderCollapsed}
+            setPromptBuilderCollapsed={setPromptBuilderCollapsed}
+            onGeneratePrompt={generatePrompt}
+            onSaveMask={saveMask}
+            onGoToPrev={goToPrev}
+            onGoToNext={goToNext}
+          />
+        </div>
+        
+        <JobsList 
+          jobs={jobs}
+          isCollapsed={jobsPanelCollapsed}
+          onToggle={() => setJobsPanelCollapsed(!jobsPanelCollapsed)}
+          apiBase={API_BASE}
         />
       </div>
       
@@ -555,16 +591,10 @@ function App() {
         setSelectedMaskForGen={setSelectedMaskForGen}
         onGenerateSora2={generateSora2}
         onGenerateVeo3={generateVeo3}
+        onGenerateKling={generateKling}
         jobs={jobs}
         currentImage={currentImage}
         onShowVideos={handleShowVideos}
-      />
-      
-      <JobsList 
-        jobs={jobs}
-        isCollapsed={jobsPanelCollapsed}
-        onToggle={() => setJobsPanelCollapsed(!jobsPanelCollapsed)}
-        apiBase={API_BASE}
       />
       
       <VideoViewer 

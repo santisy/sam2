@@ -1,0 +1,185 @@
+/* Jobs Panel - Floating at bottom of center-content container */
+.jobs-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #1a1a1a;
+  border-top: 2px solid #333;
+  z-index: 1000;
+  transition: transform 0.3s ease;
+}
+
+.jobs-panel.collapsed {
+  transform: translateY(calc(100% - 40px));
+}
+
+.jobs-panel.expanded {
+  transform: translateY(0);
+}
+
+.jobs-header {
+  height: 40px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  background: #252525;
+  border-bottom: 1px solid #333;
+}
+
+.jobs-header:hover {
+  background: #2a2a2a;
+}
+
+.jobs-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.jobs-toggle {
+  font-size: 12px;
+  color: #888;
+}
+
+.jobs-content {
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 15px 20px;
+}
+
+.no-jobs {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-size: 13px;
+}
+
+.jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.job-item {
+  background: #252525;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+
+.job-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.job-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.job-model {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #333;
+  color: #9333ea; /* Sora2 color */
+}
+
+.job-model.veo3 {
+  color: #0891b2;
+}
+
+.job-model.kling {
+  color: #ea580c;
+}
+
+.job-status {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.job-time {
+  font-size: 11px;
+  color: #888;
+}
+
+.job-info {
+  margin-bottom: 8px;
+}
+
+.job-image-mask {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 4px;
+}
+
+.job-prompt {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.4;
+}
+
+.job-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.animating {
+  width: 100%;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-text {
+  font-size: 11px;
+  color: #888;
+  min-width: 35px;
+  text-align: right;
+}
+
+.job-video {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #1e5a1e;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #4ade80;
+}
