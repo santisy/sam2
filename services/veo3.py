@@ -16,22 +16,6 @@ client = genai.Client()
 
 
 def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
-    """
-    Submit image-to-video generation job to Veo 3.1 Fast
-    
-    Args:
-        image_path: Path to input image
-        prompt: Text prompt to guide video generation
-        aspect_ratio: 'landscape' (16:9) or 'portrait' (9:16)
-        output_gcs_uri: Optional GCS bucket URI (e.g., "gs://bucket/output/")
-    
-    Returns:
-        dict: {
-            'job_id': str (operation name),
-            'operation_data': bytes (pickled operation object),
-            'status': 'submitted'
-        }
-    """
     if aspect_ratio == "landscape":
         aspect_ratio_str = "16:9"
         target_width, target_height = 1280, 720
@@ -62,7 +46,8 @@ def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
             aspect_ratio=aspect_ratio_str,
             output_gcs_uri=output_gcs_uri,
             resolution="720p",  # Can be "720p" or "1080p"
-            number_of_videos=1
+            number_of_videos=1,
+            duration_seconds=4,
         )
     )
     
@@ -78,20 +63,6 @@ def submit_i2v(image_path, prompt, aspect_ratio, output_gcs_uri=None):
 
 
 def check_status(operation_data):
-    """
-    Check status of generation job
-    
-    Args:
-        operation_data: pickled operation object (bytes) from submit_i2v
-    
-    Returns:
-        dict: {
-            'status': 'in_progress|completed|failed',
-            'done': bool,
-            'operation_data': bytes (updated pickled operation),
-            'progress': int (always 0 for Veo, no intermediate progress)
-        }
-    """
     # Unpickle the operation
     operation = pickle.loads(operation_data)
     
@@ -124,16 +95,6 @@ def check_status(operation_data):
 
 
 def download_video(operation_data, output_path):
-    """
-    Download completed video
-    
-    Args:
-        operation_data: pickled operation object (bytes)
-        output_path: Local path to save the video
-    
-    Raises:
-        Exception: If operation not complete or failed
-    """
     operation = pickle.loads(operation_data)
     
     if not operation.done:
@@ -160,17 +121,6 @@ def download_video(operation_data, output_path):
 
 
 def wait_for_completion(operation_data, poll_interval=15, timeout=600):
-    """
-    Wait for video generation to complete
-    
-    Args:
-        operation_data: pickled operation object (bytes)
-        poll_interval: Seconds between status checks (default: 15)
-        timeout: Maximum seconds to wait (default: 600 = 10 minutes)
-    
-    Returns:
-        tuple: (success: bool, final_operation_data: bytes)
-    """
     start_time = time.time()
     
     while True:
