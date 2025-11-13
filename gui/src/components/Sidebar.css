@@ -46,6 +46,29 @@
   word-break: break-all;
 }
 
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mode-toggle button {
+  flex: 1;
+  padding: 8px;
+  font-size: 12px;
+  background: #333;
+  border: 1px solid #444;
+}
+
+.mode-toggle button.active {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.mode-toggle button:hover:not(.active) {
+  background: #3a3a3a;
+}
+
 .no-images {
   padding: 20px;
   text-align: center;
@@ -110,6 +133,40 @@
 .video-counts {
   display: flex;
   gap: 3px;
+}
+
+.validation-counts {
+  display: flex;
+  gap: 3px;
+}
+
+.count.validation {
+  background: #164e63;
+  color: #22d3ee;
+  opacity: 1;
+  font-weight: 600;
+  min-width: 19px;
+  text-align: center;
+}
+
+.count.validation.loc {
+  background: #1e3a8a;
+  color: #60a5fa;
+}
+
+.count.validation.type {
+  background: #164e63;
+  color: #22d3ee;
+}
+
+.count.validation.seq {
+  background: #065f46;
+  color: #34d399;
+}
+
+.count.validation.persp {
+  background: #7c2d12;
+  color: #fb923c;
 }
 
 .count.video.sora2 {

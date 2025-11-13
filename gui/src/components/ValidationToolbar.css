@@ -1,0 +1,112 @@
+.validation-toolbar {
+  height: 20%;
+  background: #2a2a2a;
+  border-top: 1px solid #333;
+  padding: 10px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.navigation-section {
+  flex: 0;
+  display: flex;
+  padding: 5px 0;
+}
+
+.nav-buttons {
+  display: grid;
+  grid-template-columns: 15% 15% 40% 15% 15%;
+  gap: 8px;
+  width: 100%;
+}
+
+.nav-spacer {
+  /* Empty spacer for center gap */
+}
+
+.nav-buttons button {
+  padding: 8px;
+  background: #333;
+  border: 1px solid #444;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nav-buttons button:hover {
+  background: #3a3a3a;
+}
+
+.annotation-row {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.no-selection-message {
+  color: #666;
+  font-size: 14px;
+  width: 100%;
+  text-align: center;
+}
+
+.annotation-section {
+  flex: 0.49;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid #444;
+  padding: 15px;
+  justify-content: space-between;
+}
+
+.annotation-section.perspective {
+  flex: 2.53;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #aaa;
+}
+
+.button-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+}
+
+.button-wrapper button {
+  padding: 10px;
+  background: #333;
+  border: none;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  width: 100%;
+}
+
+.button-wrapper button.active.yes {
+  background: #166534;
+  color: #4ade80;
+}
+
+.button-wrapper button.active.no {
+  background: #7f1d1d;
+  color: #f87171;
+}
+
+.button-wrapper button:hover:not(.active) {
+  background: #3a3a3a;
+}
+
+.placeholder {
+  color: #666;
+  font-size: 13px;
+  font-style: italic;
+}

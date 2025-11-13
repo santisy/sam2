@@ -7,6 +7,7 @@ import AnnotationView from './components/AnnotationView';
 import ToolsSidebar from './components/ToolsSidebar';
 import JobsList from './components/JobsList';
 import VideoViewer from './components/VideoViewer';
+import ValidationView from './components/ValidationView';
 
 const PORT = 5876;
 const API_BASE = `http://localhost:${PORT}`;
@@ -66,6 +67,11 @@ function App() {
   
   // Video viewer state
   const [showVideoViewer, setShowVideoViewer] = useState(false);
+  
+  // Validation mode
+  const [validationMode, setValidationMode] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('sora2');
+  const [validationStats, setValidationStats] = useState(null);
 
   useEffect(() => {
     setWorkingDirectory();
@@ -78,6 +84,21 @@ function App() {
       }
     };
   }, []);
+
+  // Load validation stats when entering validation mode
+  useEffect(() => {
+    const loadValidationStats = async () => {
+      if (validationMode) {
+        const res = await fetch(`${API_BASE}/api/validation/stats`);
+        const data = await res.json();
+        setValidationStats(data);
+      } else {
+        setValidationStats(null);
+      }
+    };
+    
+    loadValidationStats();
+  }, [validationMode]);
 
   const loadJobs = async () => {
     try {
@@ -101,7 +122,6 @@ function App() {
       loadAnnotations();
       // Clear drawing state when switching images
       setActiveMask(null);
-      setActiveMaskIndex(null);
       setMaskMode(false);
       setSelectedMaskForGen(null);
       pointsRef.current = [];
@@ -163,7 +183,12 @@ function App() {
     const res = await fetch(`${API_BASE}/api/annotation/${currentImage.path}`);
     const data = await res.json();
     setMasks(data.masks || []);
-    startNewMask();
+    
+    if (validationMode && data.masks && data.masks.length > 0) {
+      setActiveMaskIndex(0);
+    } else {
+      startNewMask();
+    }
     
     // Load crop data from same json
     if (data.crop) {
@@ -461,6 +486,18 @@ function App() {
     }
   };
 
+  const goToPrevMask = () => {
+    if (activeMaskIndex !== null && activeMaskIndex > 0) {
+      setActiveMaskIndex(activeMaskIndex - 1);
+    }
+  };
+
+  const goToNextMask = () => {
+    if (activeMaskIndex !== null && activeMaskIndex < masks.length - 1) {
+      setActiveMaskIndex(activeMaskIndex + 1);
+    }
+  };
+
   const generatePrompt = () => {
     const parts = [];
     parts.push('The');
@@ -495,107 +532,134 @@ function App() {
         onChangeDirectory={changeDirectory}
         onSelectImage={setCurrentImage}
         jobs={jobs}
+        validationMode={validationMode}
+        setValidationMode={setValidationMode}
+        validationStats={validationStats}
       />
       
       <div className="center-content">
-        <MaskSidebar 
-          currentImage={currentImage}
-          masks={masks}
-          activeMask={activeMask}
-          activeMaskIndex={activeMaskIndex}
-          prompt={prompt}
-          onStartNewMask={startNewMask}
-          onEditMask={editMask}
-          onDeleteMask={deleteMask}
-        />
-        
-        <div className="main">
-          <ImageCanvas 
-            apiBase={API_BASE}
+        {!validationMode && (
+          <MaskSidebar 
             currentImage={currentImage}
             masks={masks}
             activeMask={activeMask}
             activeMaskIndex={activeMaskIndex}
-            showOtherMasks={showOtherMasks}
-            imageLoaded={imageLoaded}
-            setImageLoaded={setImageLoaded}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            maskMode={maskMode}
-            cropMode={cropMode}
-            cropOrientation={cropOrientation}
-            cropSize={cropSize}
-            cropData={cropData}
-            onCropChange={setCurrentCrop}
-          />
-          
-          <AnnotationView 
-            currentImage={currentImage}
-            images={images}
-            masks={masks}
-            showOtherMasks={showOtherMasks}
-            setShowOtherMasks={setShowOtherMasks}
             prompt={prompt}
-            setPrompt={setPrompt}
-            activeMask={activeMask}
-            pbIndicator={pbIndicator}
-            setPbIndicator={setPbIndicator}
-            pbPart={pbPart}
-            setPbPart={setPbPart}
-            pbDescription={pbDescription}
-            setPbDescription={setPbDescription}
-            pbObject={pbObject}
-            setPbObject={setPbObject}
-            pbAction={pbAction}
-            setPbAction={setPbAction}
-            pbDirection={pbDirection}
-            setPbDirection={setPbDirection}
-            pbContext={pbContext}
-            setPbContext={setPbContext}
-            lastClicked={lastClicked}
-            setLastClicked={setLastClicked}
-            promptBuilderCollapsed={promptBuilderCollapsed}
-            setPromptBuilderCollapsed={setPromptBuilderCollapsed}
-            onGeneratePrompt={generatePrompt}
-            onSaveMask={saveMask}
+            onStartNewMask={startNewMask}
+            onEditMask={editMask}
+            onDeleteMask={deleteMask}
+          />
+        )}
+        
+        {!validationMode ? (
+          <>
+            <div className="main">
+              <ImageCanvas 
+                apiBase={API_BASE}
+                currentImage={currentImage}
+                masks={masks}
+                activeMask={activeMask}
+                activeMaskIndex={activeMaskIndex}
+                showOtherMasks={showOtherMasks}
+                imageLoaded={imageLoaded}
+                setImageLoaded={setImageLoaded}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                maskMode={maskMode}
+                cropMode={cropMode}
+                cropOrientation={cropOrientation}
+                cropSize={cropSize}
+                cropData={cropData}
+                onCropChange={setCurrentCrop}
+              />
+              
+              <AnnotationView 
+                currentImage={currentImage}
+                images={images}
+                masks={masks}
+                showOtherMasks={showOtherMasks}
+                setShowOtherMasks={setShowOtherMasks}
+                prompt={prompt}
+                setPrompt={setPrompt}
+                activeMask={activeMask}
+                pbIndicator={pbIndicator}
+                setPbIndicator={setPbIndicator}
+                pbPart={pbPart}
+                setPbPart={setPbPart}
+                pbDescription={pbDescription}
+                setPbDescription={setPbDescription}
+                pbObject={pbObject}
+                setPbObject={setPbObject}
+                pbAction={pbAction}
+                setPbAction={setPbAction}
+                pbDirection={pbDirection}
+                setPbDirection={setPbDirection}
+                pbContext={pbContext}
+                setPbContext={setPbContext}
+                lastClicked={lastClicked}
+                setLastClicked={setLastClicked}
+                promptBuilderCollapsed={promptBuilderCollapsed}
+                setPromptBuilderCollapsed={setPromptBuilderCollapsed}
+                onGeneratePrompt={generatePrompt}
+                onSaveMask={saveMask}
+                onGoToPrev={goToPrev}
+                onGoToNext={goToNext}
+              />
+            </div>
+            
+            <JobsList 
+              jobs={jobs}
+              isCollapsed={jobsPanelCollapsed}
+              onToggle={() => setJobsPanelCollapsed(!jobsPanelCollapsed)}
+              apiBase={API_BASE}
+            />
+          </>
+        ) : (
+          <ValidationView 
+            apiBase={API_BASE}
+            currentImage={currentImage}
+            masks={masks}
+            activeMaskIndex={activeMaskIndex}
+            onSelectMask={(idx) => setActiveMaskIndex(idx)}
+            selectedModel={selectedModel}
+            onSelectModel={setSelectedModel}
             onGoToPrev={goToPrev}
             onGoToNext={goToNext}
+            onGoToPrevMask={goToPrevMask}
+            onGoToNextMask={goToNextMask}
+            validationStats={validationStats}
+            onValidationStatsUpdate={setValidationStats}
           />
-        </div>
-        
-        <JobsList 
-          jobs={jobs}
-          isCollapsed={jobsPanelCollapsed}
-          onToggle={() => setJobsPanelCollapsed(!jobsPanelCollapsed)}
-          apiBase={API_BASE}
-        />
+        )}
       </div>
       
-      <ToolsSidebar 
-        cropMode={cropMode}
-        setCropMode={(mode) => {
-          setCropMode(mode);
-          if (mode) setMaskMode(false);
-        }}
-        cropOrientation={cropOrientation}
-        setCropOrientation={setCropOrientation}
-        cropSize={cropSize}
-        setCropSize={setCropSize}
-        cropData={cropData}
-        currentCrop={currentCrop}
-        onSaveCrop={saveCrop}
-        onDeleteCrop={deleteCrop}
-        masks={masks}
-        selectedMaskForGen={selectedMaskForGen}
-        setSelectedMaskForGen={setSelectedMaskForGen}
-        onGenerateSora2={generateSora2}
-        onGenerateVeo3={generateVeo3}
-        onGenerateKling={generateKling}
-        jobs={jobs}
-        currentImage={currentImage}
-        onShowVideos={handleShowVideos}
-      />
+      {!validationMode && (
+        <ToolsSidebar 
+          cropMode={cropMode}
+          setCropMode={(mode) => {
+            setCropMode(mode);
+            if (mode) setMaskMode(false);
+          }}
+          cropOrientation={cropOrientation}
+          setCropOrientation={setCropOrientation}
+          cropSize={cropSize}
+          setCropSize={setCropSize}
+          cropData={cropData}
+          currentCrop={currentCrop}
+          onSaveCrop={saveCrop}
+          onDeleteCrop={deleteCrop}
+          masks={masks}
+          selectedMaskForGen={selectedMaskForGen}
+          setSelectedMaskForGen={setSelectedMaskForGen}
+          onGenerateSora2={generateSora2}
+          onGenerateVeo3={generateVeo3}
+          onGenerateKling={generateKling}
+          jobs={jobs}
+          currentImage={currentImage}
+          onShowVideos={handleShowVideos}
+        />
+      )}
       
       <VideoViewer 
         isOpen={showVideoViewer}

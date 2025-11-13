@@ -34,6 +34,7 @@ IMAGE_DIR = Path("test_data_total_1029")  # Hardcoded to match frontend default
 
 from services import mask_crop_service as mcs
 from services import video_gen_service as vgs
+from services import validation_service as vs
 
 
 @app.post("/api/set-directory")
@@ -215,10 +216,57 @@ def serve_kling_video(filename):
     return _serve_video("kling", filename)
 
 
+@app.get("/api/validation")
+def get_validation(image_path: str, mask_index: int, model: str):
+    img_path = IMAGE_DIR / image_path
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    return vs.get_validation(IMAGE_DIR, img_path, mask_index, model)
+
+
+@app.post("/api/validation")
+async def update_validation(request: dict):
+    img_path = IMAGE_DIR / request['image_path']
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    result = vs.update_validation(
+        IMAGE_DIR, 
+        img_path, 
+        request['mask_index'], 
+        request['model'],
+        request['field'],
+        request['value']
+    )
+    
+    # Return updated global stats along with result
+    return {
+        "success": result["success"],
+        "data": result["data"],
+        "global_stats": vs.get_global_stats()
+    }
+
+
+@app.get("/api/validation/stats")
+def get_validation_stats():
+    return vs.get_global_stats()
+
+
+@app.get("/api/validation/image-stats")
+def get_image_validation_stats(image_path: str):
+    img_path = IMAGE_DIR / image_path
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    return vs.get_image_stats(IMAGE_DIR, img_path)
+
+
 @app.on_event("startup")
 async def startup_event():
     if IMAGE_DIR and IMAGE_DIR.exists():
         vgs.load_all_jobs(IMAGE_DIR)
+        vs.scan_all_validations(IMAGE_DIR)
     else:
         print(f"Image directory not found: {IMAGE_DIR}")
 
